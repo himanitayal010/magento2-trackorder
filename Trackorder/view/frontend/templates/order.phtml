@@ -1,0 +1,175 @@
+<?php
+$objectManager = \Magento\Framework\App\ObjectManager::getInstance();
+$customerSession = $objectManager->get('Magento\Customer\Model\Session');
+?>
+<div class="track-order-main">
+    <span class="error_msg" id="emsg" style="display: none;"></span>
+    <span id="track_message" style="display: none;"></span>
+<div class="track-container"><div class="block block-customer-track">
+    <div class="block-content" aria-labelledby="block-customer-track-heading">
+        <?php
+        $orderCollection = $objectManager->create('\Magento\Sales\Model\ResourceModel\Order\Collection');
+        $orderCollection->addAttributeToFilter('customer_id',$customerSession->getCustomer()->getId())->setOrder('entity_id','DESC')->load();
+        if($orderCollection->getSize()) {
+        ?>
+        <form class="form form-track" id="track-form" action="javascript:" 
+                 data-mage-init='{"validation":{}}'>  
+        <?= $block->getBlockHtml('formkey') ?>        
+            <fieldset class="fieldset track" data-hasrequired="* Required Fields">          
+                <div class="field track required">
+                    <label class="label" for="tracking id"><span><?= $block->escapeHtml(__('order Id')) ?></span></label>
+                    <div class="control">
+                        <?php 
+                        if($customerSession->isLoggedIn()) {
+                            if($_REQUEST){
+                        ?>
+                        <script type="text/javascript">
+                            require(['jquery'], function($){
+                                $(document).ready(function(){
+                                    var mydata = "<?php echo $_REQUEST['order_id'] ?>";
+                                    $('#tracking').val(mydata);
+                                });
+                            });
+                        </script>
+                    <?php } ?>
+                        <select name="track[order_id]" id="tracking" class="input-text" title="<?php echo __('Order Id') ?>" data-validate='{"required":true}'>
+                            <?php 
+                               foreach ($orderCollection as $value) {
+                                    $incrementId = $value->getIncrementId();
+                                    $datetime = $value->getCreatedAt();
+                                    $date=strtotime($datetime);
+                                    echo date("d/m/Y", $date);
+                                    ?>
+                                    <option value="<?php echo $incrementId ?>"><?php echo $incrementId ?><?= $block->escapeHtml(__(' Placed on  ')) ?> <?php echo date("d/m/Y", $date) ?></option>
+                                    <?php
+                                } 
+                            ?>
+                        </select>
+                        <?php }else{ ?>
+                        <input name="track[order_id]" value="<?php if($_REQUEST) : echo $_REQUEST['order_id']; endif; ?>" autocomplete="off" id="tracking" type="text" class="input-text" title="<?php echo __('Order Id') ?>" data-validate='{"required":true}'>
+                        <?php } ?>
+                    </div>
+                </div>
+                <div class="field email required">
+                    <?php 
+                        if($customerSession->isLoggedIn()) {
+                        ?>
+                            <label class="label" for="email" style="display: none;"><span><?= $block->escapeHtml(__('Email')) ?></span></label>
+                         <?php }else{ ?>
+                            <label class="label" for="email"><span><?= $block->escapeHtml(__('Email')) ?></span></label>
+                         <?php } ?>
+
+                    <div class="control">
+                        <?php 
+                        if($customerSession->isLoggedIn()) {
+                        ?>
+                        <input name="track[customer_email]" value="<?php echo $customerSession->getCustomer()->getEmail(); ?>" autocomplete="off" id="email" type="hidden" class="input-text" title="<?php echo __('Email') ?>" data-validate="{required:true, 'validate-email':true}">
+                        <?php }else{ ?>
+                        <input name="track[customer_email]" value="<?php if($_REQUEST) : echo $_REQUEST['email']; endif; ?>" autocomplete="off" id="email" type="email" class="input-text" title="<?php echo __('Email') ?>" data-validate="{required:true, 'validate-email':true}">
+                        <?php } ?>
+                    </div>
+                </div>
+                    <div class="actions-toolbar">
+                    <div class="primary"><button type="submit" id="tarck_button" class="action track primary" name="send" id="send2"><span><?= $block->escapeHtml(__('Track Order')) ?></span></button></div>
+                </div>
+            </fieldset>
+        </form>
+        <?php }else { ?>
+            <div class="err-track">There is no Order to Track.</div>
+        <?php } ?>
+    </div>
+</div>
+</div>
+<?php if($_REQUEST) { ?>
+    <script type="text/javascript">
+        require(['jquery'], function($){
+            $(document).ready(function(){
+                var textVal = $('#tracking').val();
+                if(textVal) {
+                    var dataForm = $('#track-form');
+                    $.ajax({
+                        url:'<?php echo $this->getBaseUrl() ?>trackorder/order/shipment',
+                        type:'POST',
+                        showLoader: true,
+                        dataType:'json',
+                        data: $('form').serialize(),  
+                    }).done(function(response){
+                        dataobj = JSON.parse(JSON.stringify(response));
+                        if(dataobj.status == true){
+                            $(".track_result, #track_message").css('display','block');
+                            $(".error_msg").css('display','none');
+                            $(".order-detail-id").html(dataobj.orderdetailhtml);
+                            $("#track_message").html(dataobj.emessage);
+                            if(dataobj.trackData){    
+                               $("#shipmentservice").css('display','block')
+                               $("#shipmentservice tbody").html(dataobj.trackData); 
+                               $("#track_message").html(dataobj.emessage);
+                            }
+                            else{
+                               $("#shipmentservice, #track_message").css('display','none'); 
+                               $(".error_msg").css('display','block');
+                               $("#emsg").html(dataobj.emessage); 
+                            }   
+                        }else{
+                            $(".track_result, #track_message").css('display','none');
+                            $(".error_msg").css('display','block');
+                            $("#emsg").html(dataobj.emessage);           
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+<?php } ?>
+<div class="track_result" style="display: none;">
+    <h2><?php echo __('Tracking Information') ?></h2>
+    <div class="order-detail-id">
+    </div>
+    <table id="shipmentservice"> 
+        <tbody></tbody>
+    </table>
+</div>
+</div>
+<script>
+    require([
+        'jquery','mage/validation'
+    ], function ($) {
+      var dataForm = $('#track-form');
+      dataForm.mage('validation', {});
+      $('#tarck_button').click( function() { 
+        var status = dataForm.validation('isValid'); //validates form and returns boolean
+        if(status){
+            $.ajax({
+                url:'<?php echo $this->getBaseUrl() ?>trackorder/order/shipment',
+                type:'POST',
+                showLoader: true,
+                dataType:'json',
+                data: $('form').serialize(),  
+            }).done(function( response ){ 
+                dataobj = JSON.parse(JSON.stringify(response));
+                if(dataobj.status == true){
+                    $(".track_result, #track_message").css('display','block');
+                    $(".error_msg").css('display','none');
+                    $(".order-detail-id").html(dataobj.orderdetailhtml);
+                    $("#track_message").html(dataobj.emessage);
+                if(dataobj.trackData){    
+                   $("#shipmentservice").css('display','block')
+                   $("#shipmentservice tbody").html(dataobj.trackData); 
+                   $("#track_message").html(dataobj.emessage);
+                }
+                else{
+                   $("#shipmentservice, #track_message").css('display','none'); 
+                   $(".error_msg").css('display','block');
+                   $("#emsg").html(dataobj.emessage); 
+                }   
+            }
+            else{
+                $(".track_result, #track_message").css('display','none');
+                $(".error_msg").css('display','block');
+                $("#emsg").html(dataobj.emessage);           
+            }
+              });
+            }
+        });
+    });
+</script>
